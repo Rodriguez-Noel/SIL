@@ -1,0 +1,129 @@
+@startuml
+start 
+:const char *path;
+
+if (!(argc == 2)) then (1) <<#yellow>>
+	:fprintf(stderr, "usage...")  
+	ARG_FAULT; <<#lightpink>>
+	kill
+else (0)
+	:path = *(argv + 1);
+	if (!path || *path == '\0') then (1) <<#yellow>> 
+		:fprintf(stderr, "usage...")  
+		ARG_FAULT; <<#lightpink>>
+		kill
+	else (0)
+	endif
+endif 
+:int pfd[2]
+pid_t ld_pid, st_pid
+int ld_status, st_status;
+
+if (pipe(pfd)) then (1) <<#yellow>>
+	:perror  
+	SYS_FAULT; <<#lightpink>>
+	kill
+else (0)
+endif
+:ld_pid = fork();
+if (ld_pid < 0) then (1) <<#yellow>>
+	:perror 
+	close(pfd[0])
+	close(pfd[1])
+	SYS_FAULT; <<#lightpink>>
+	kill
+else (0)
+endif 
+if (ld_pid == 0) then (1) <<#yellow>>
+	group ld_child_process {
+	if (dup2(pfd[1], STDOUT_FILENO) < 0) then (1) <<#yellow>>
+	floating note left
+		Associating the write end of the pipe with
+		the child processes <color:red>STDOUT<color:black> fd. When PS_LD prints 
+		to STDOUT it will be sending TSV data into this pipe.
+		end note 
+			:perror  
+			_exit(EXE_FAULT); <<#lightpink>>
+			kill
+	else (0) 
+		:close(pfd[0]) 
+		close(pfd[1]) 
+		execl(LD_BIN_PATH...); <<#lightgreen>>
+		floating note left 
+		When execl runs it replaces the child process and will
+		terminate on its own later. If execl doesn't succeed 
+		program execution will continue into a fault.
+		end note
+		:perror 
+		_exit(EXE_FAULT); <<#lightpink>>
+		kill 
+	endif 
+	} 
+else (0)
+endif
+:st_pid = fork();
+if (st_pid < 0) then (1) <<#yellow>>
+ 	:perror
+	close(pfd[0])
+	close(pfd[1]);			
+	:kill(ld_pid, SIGTERM)
+	waitpid(ld_pid, NULL, 0)
+	SYS_FAULT; <<#lightpink>>
+	floating note left
+	In the case of the second fork failing when the 
+	first has succeeded we should kill the LD child.
+	It is still executing its task and may remain hanging
+	if we don't terminate it.
+	end note
+	kill
+else (0)
+endif
+if (st_pid == 0) then (1) <<#yellow>>
+	group st_child_process {
+	if (dup2(pfd[0], STDIN_FILENO) < 0) then (1) <<#yellow>>
+               	:perror
+		_exit(EXE_FAULT); <<#lightpink>>
+		kill
+		else (0)
+		:close(pfd[0])
+		close(pfd[1])
+		execl(ST_BIN_PATH...); <<#lightgreen>>
+		:perror
+		_exit(EXE_FAULT); <<#lightpink>>
+                kill
+		endif
+	}
+else (0)
+endif
+:close(pfd[0])
+close(pfd[1]);
+:ld_status = 0
+st_status = 0;
+if (waitpid(ld_pid, &ld_status, 0) < 0) then (1)
+	:perror
+	SYS_FAULT; <<#lightpink>>
+	kill
+else (0)
+endif
+if (waitpid(st_pid, &st_status, 0) < 0) then (0)
+	:perror
+	SYS_FAULT; <<#lightpink>>
+	kill
+else (0)
+endif
+if (!WIFEXITED(ld_status) || WEXITSTATUS(ld_status) != 0) then (1)
+	:SYS_FAULT; <<#lightpink>>
+	kill
+else (0)
+endif
+if (!WIFEXITED(st_status) || WEXITSTATUS(st_status) != 0) then (0)
+	:SYS_FAULT; <<#lightpink>>
+	kill
+else (0)
+endif
+
+ 
+ 
+
+stop 
+@enduml	

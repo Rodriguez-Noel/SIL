@@ -1,0 +1,57 @@
+@startuml
+start
+
+
+:Dir *D
+struct dirent *e
+d = opendir("/proc");
+
+floating note left 
+Initial setup for directory 
+walk and subsequent reads.
+end note
+
+if (!d) then (1)<<#yellow>>
+	:perror
+	SYS_FAULT; <<#pink>>
+	stop
+else (0)
+endif 
+
+while (e = readdir(d)) is (1)<<#lightblue>>
+	note 
+	Main loop:
+	helper functions conduct 
+	best-effort filtering and
+	reading over /proc entries
+	before TSV emission.
+	end note
+	
+	if (!sil_is_pid_dir(e->d_name)) then (1) <<#yellow>>
+	else (0)
+		:pid = atoi(e->d_name);
+		if (sil_r_status_fields(pid, &tgid, &uid, &thr)) then (1) <<#yellow>> 
+		(0) elseif (!(pid == tgid)) then (1) <<#yellow>>
+		else (0)
+			:sil_r_comm(pid,comm); 
+			:printf("%d\t%d\t%d\t%d\t%s\n", pid, tgid, uid, thr, comm); <<#lightgreen>>
+note right
+Main objective/product: 
+Populate <color:red> STDOUT <color:black> with one TSV record per 
+accepted process.
+end note
+		endif 
+	endif 
+endwhile (0)
+
+:closedir(d);
+
+floating note right
+By this point we have written all data to<color:red> STDOUT 
+<color:black> in TSV format. 
+end note
+
+stop
+@enduml
+
+
