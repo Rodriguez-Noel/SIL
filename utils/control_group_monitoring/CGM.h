@@ -62,6 +62,9 @@
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <fcntl.h>
 
 //Defined in CGM_LIB.c:
 int sil_mkdir_p(const char *path); // Copy of mkdir -p from PS files.
